@@ -2,971 +2,829 @@
 import random
 import requests
 import streamlit as st
+from urllib.parse import quote
 
 # =========================================================
-# 1. 기본 설정
+# 바이오 헌터 - 탐험하며 생명과학 퀴즈를 풀고 생물을 수집하는 게임
 # =========================================================
+
 st.set_page_config(
     page_title="바이오 헌터",
     page_icon="🌿",
     layout="wide",
 )
 
-# =========================================================
-# 2. 디자인
-# =========================================================
+# -------------------- 디자인 --------------------
+
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Jua&family=Noto+Sans+KR:wght@400;500;700;900&display=swap');
-
-html, body, [class*="css"] {
-    font-family: 'Noto Sans KR', sans-serif;
-}
 .stApp {
-    background: linear-gradient(180deg, #f3f7e9 0%, #e7f0df 100%);
+    background: linear-gradient(180deg, #f4f8ed 0%, #fffdf5 100%);
 }
 h1, h2, h3 {
-    font-family: 'Jua', sans-serif !important;
-    color: #264b35;
-}
-.hero {
-    background: linear-gradient(135deg, #234831, #568b58);
-    color: white;
-    border-radius: 24px;
-    padding: 25px;
-    margin-bottom: 20px;
-    box-shadow: 0 8px 24px #244b3522;
-}
-.hero h1 {
-    color: white !important;
-    font-size: 40px;
-    margin: 0;
-}
-.hero p {
-    color: #eef8e8;
-    margin-bottom: 0;
-}
-.terrain-card {
-    background: white;
-    border: 2px solid #d8e6d1;
-    border-radius: 18px;
-    padding: 16px 10px;
-    text-align: center;
-    min-height: 135px;
-}
-.creature-card {
-    background: white;
-    border: 1px solid #d8e6d1;
-    border-radius: 18px;
-    padding: 14px;
-    margin-bottom: 12px;
-}
-.tag {
-    display: inline-block;
-    padding: 4px 9px;
-    border-radius: 20px;
-    background: #e8f2e1;
-    color: #315f3e;
-    font-size: 12px;
-    font-weight: 700;
-    margin: 2px;
-}
-.muted {
-    color: #687768;
-    font-size: 13px;
+    color: #28583a;
 }
 div.stButton > button {
     border-radius: 12px;
-    font-weight: 700;
-    min-height: 42px;
+    min-height: 43px;
+    font-weight: 600;
 }
-[data-testid="stMetric"] {
+div.stButton > button[kind="primary"] {
+    background-color: #39764c;
+    border-color: #39764c;
+}
+.creature-box {
     background: white;
-    border: 1px solid #d8e6d1;
-    border-radius: 14px;
-    padding: 12px;
+    border: 1px solid #dce8d4;
+    border-radius: 16px;
+    padding: 18px;
+    margin-bottom: 12px;
+}
+.small-note {
+    color: #667766;
+    font-size: 0.9rem;
 }
 </style>
 """, unsafe_allow_html=True)
 
-# =========================================================
-# 3. 지형
-# =========================================================
+# -------------------- 지형 설정 --------------------
+
 TERRAINS = {
-    "숲": {
-        "emoji": "🌲",
-        "description": "나무와 낙엽 사이에서 숲속 생물을 찾아봐.",
-    },
+    "숲": {"emoji": "🌲", "habitats": ["숲"], "description": "나무와 숲속 생물"},
     "호수·연못": {
         "emoji": "🏞️",
-        "description": "잔잔한 물가에서 물고기와 양서류를 찾아봐.",
+        "habitats": ["호수", "연못"],
+        "description": "물속과 물가의 생물",
     },
-    "바다": {
-        "emoji": "🌊",
-        "description": "바닷속 생물과 해안 생태계를 탐험해 봐.",
-    },
-    "산": {
-        "emoji": "⛰️",
-        "description": "바위와 산악 지대에 사는 생물을 찾아봐.",
-    },
-    "초원": {
-        "emoji": "🌾",
-        "description": "풀밭에서 곤충과 초원 생물을 찾아봐.",
-    },
-    "습지": {
-        "emoji": "🐸",
-        "description": "물과 땅이 만나는 곳의 생물을 찾아봐.",
-    },
+    "바다": {"emoji": "🌊", "habitats": ["바다"], "description": "바다에 사는 생물"},
+    "산": {"emoji": "⛰️", "habitats": ["산"], "description": "산과 바위 주변의 생물"},
+    "초원": {"emoji": "🌾", "habitats": ["초원"], "description": "풀밭과 들판의 생물"},
+    "습지": {"emoji": "🐸", "habitats": ["습지"], "description": "늪과 습지의 생물"},
 }
 
-# =========================================================
-# 4. 희귀도
-# 가중치 58:25:12:4:1
-# 최초 발견 XP: 10/20/40/80/150
-# =========================================================
 RARITY_INFO = {
-    "일반": {
-        "weight": 58,
-        "xp": 10,
-        "emoji": "🍃",
-        "color": "#788d70",
-    },
-    "고급": {
-        "weight": 25,
-        "xp": 20,
-        "emoji": "🌿",
-        "color": "#33965d",
-    },
-    "희귀": {
-        "weight": 12,
-        "xp": 40,
-        "emoji": "💎",
-        "color": "#4285d4",
-    },
-    "초희귀": {
-        "weight": 4,
-        "xp": 80,
-        "emoji": "✨",
-        "color": "#a45cc5",
-    },
-    "전설": {
-        "weight": 1,
-        "xp": 150,
-        "emoji": "👑",
-        "color": "#d49a24",
-    },
+    "일반": {"weight": 58, "xp": 10, "emoji": "🍃", "color": "일반"},
+    "고급": {"weight": 25, "xp": 20, "emoji": "🌿", "color": "고급"},
+    "희귀": {"weight": 12, "xp": 40, "emoji": "💎", "color": "희귀"},
+    "초희귀": {"weight": 4, "xp": 80, "emoji": "✨", "color": "초희귀"},
+    "전설": {"weight": 1, "xp": 150, "emoji": "👑", "color": "전설"},
 }
 
-# =========================================================
-# 5. 생물 데이터
-# 이름|영어 이름|분류|서식지|희귀도|설명
-# =========================================================
+# 생물 데이터 형식:
+# 한국어 이름|영어 이름|분류|서식지|희귀도|설명|대표 이모지
 RAW_SPECIES = """
-참개구리|Black-spotted pond frog|양서류|연못,습지|일반|논과 연못 주변에서 볼 수 있는 개구리
-청개구리|Japanese tree frog|양서류|숲,습지|고급|나뭇잎이나 풀 위에서 생활하는 작은 개구리
-두꺼비|Asian common toad|양서류|숲,초원|고급|피부에 독성 물질을 분비하는 양서류
-도롱뇽|Korean salamander|양서류|숲,산|희귀|습한 곳에서 생활하는 양서류
-무당개구리|Oriental fire-bellied toad|양서류|습지|희귀|배 부분의 화려한 무늬가 특징
-맹꽁이|Korean narrow-mouthed toad|양서류|습지|초희귀|땅속에서 생활하는 시간이 긴 양서류
-수원청개구리|Suwon tree frog|양서류|습지|전설|보전이 중요한 희귀 양서류
-산개구리|Brown frog|양서류|산,숲|일반|산지의 물가에서 관찰할 수 있는 개구리
-황소개구리|American bullfrog|양서류|연못,습지|일반|몸집이 크고 식욕이 왕성한 개구리
-고라니|Water deer|포유류|숲,초원|일반|우리나라에서 흔히 관찰되는 사슴과 동물
-너구리|Raccoon dog|포유류|숲|일반|야행성이며 다양한 먹이를 먹는 동물
-오소리|Asian badger|포유류|숲,산|고급|땅을 파서 굴을 만드는 포유류
-멧돼지|Wild boar|포유류|숲,산|일반|잡식성이며 후각이 발달한 동물
-다람쥐|Siberian chipmunk|포유류|숲|일반|볼주머니에 먹이를 저장하는 동물
-청설모|Red squirrel|포유류|숲|일반|나무 위에서 생활하는 다람쥐류
-고슴도치|Amur hedgehog|포유류|숲,초원|고급|몸에 가시가 있는 작은 포유류
-족제비|Least weasel|포유류|숲,초원|고급|몸이 길고 작은 동물을 사냥하는 포유류
-수달|Eurasian otter|포유류|연못,습지|희귀|물속 생활에 적응한 포유류
-삵|Leopard cat|포유류|숲,산|희귀|우리나라에 사는 야생 고양잇과 동물
-반달가슴곰|Asiatic black bear|포유류|숲,산|초희귀|가슴에 반달 모양 무늬가 나타나는 곰
-산양|Long-tailed goral|포유류|산|초희귀|바위가 많은 산악 지대에 적응한 동물
-여우|Red fox|포유류|숲,초원|희귀|청각과 후각이 발달한 포유류
-토끼|European rabbit|포유류|초원|일반|초식성이며 번식 속도가 빠른 포유류
-박쥐|Bat|포유류|숲,산|고급|날개를 가진 포유류
-하늘다람쥐|Siberian flying squirrel|포유류|숲|초희귀|피부막을 이용해 나무 사이를 활공하는 포유류
-늑대|Wolf|포유류|숲,초원|전설|무리 생활과 협동 사냥으로 알려진 포유류
-호랑이|Tiger|포유류|숲,산|전설|먹이사슬 상위에 위치하는 대형 포식자
-참새|Eurasian tree sparrow|조류|숲,초원|일반|도시 주변에서도 흔히 볼 수 있는 작은 새
-까치|Oriental magpie|조류|숲,도시|일반|검고 흰 깃털과 긴 꼬리가 특징
-까마귀|Large-billed crow|조류|숲,도시|일반|학습 능력이 뛰어난 새
-박새|Japanese tit|조류|숲|일반|나무 사이를 돌아다니며 곤충을 먹는 작은 새
-직박구리|Brown-eared bulbul|조류|숲,도시|일반|도시와 정원에서 자주 관찰되는 새
-딱따구리|Great spotted woodpecker|조류|숲|고급|나무를 두드려 먹이를 찾는 새
-물총새|Common kingfisher|조류|연못,습지|희귀|물속의 작은 물고기를 사냥하는 새
-왜가리|Grey heron|조류|연못,습지|고급|긴 다리와 부리를 이용해 물고기를 잡는 새
-백로|Little egret|조류|연못,습지|고급|흰 깃털과 긴 다리가 특징인 물가의 새
-청둥오리|Mallard|조류|연못,습지|일반|연못과 하천에서 관찰되는 오리
-원앙|Mandarin duck|조류|숲,연못|희귀|수컷의 화려한 깃털이 특징
-수리부엉이|Eurasian eagle-owl|조류|숲,산|초희귀|큰 눈과 귀깃이 특징인 야행성 맹금류
-소쩍새|Oriental scops owl|조류|숲|희귀|밤에 활동하며 특유의 울음소리를 내는 새
-황조롱이|Common kestrel|조류|초원,도시|희귀|공중에서 정지 비행하며 먹이를 찾는 맹금류
-독수리|Cinereous vulture|조류|산,초원|초희귀|죽은 동물을 먹어 생태계의 청소부 역할을 함
-두루미|Red-crowned crane|조류|습지|전설|습지 보전의 상징으로 알려진 대형 조류
-저어새|Black-faced spoonbill|조류|습지|전설|주걱 모양 부리로 물속 먹이를 찾는 새
-제비|Barn swallow|조류|초원,숲|일반|날아다니는 곤충을 잡아먹는 새
-꿩|Common pheasant|조류|숲,초원|일반|수컷의 화려한 깃털이 특징
-기러기|Wild goose|조류|습지|고급|무리를 지어 이동하는 물새
-펭귄|Penguin|조류|바다|희귀|날개가 물속에서 헤엄치기에 적합하게 발달한 새
-잉어|Common carp|어류|연못|일반|민물에서 살아가는 큰 물고기
-붕어|Crucian carp|어류|연못|일반|연못과 하천에서 흔히 볼 수 있는 물고기
-피라미|Pale chub|어류|연못,산|일반|민물에서 관찰되는 작은 물고기
-미꾸라지|Oriental weather loach|어류|연못,습지|일반|진흙 속에서도 생활할 수 있는 물고기
-메기|Amur catfish|어류|연못|고급|수염으로 주변을 탐색하는 민물고기
-쏘가리|Mandarin fish|어류|산|희귀|민물 생태계의 포식성 어류
-은어|Ayu|어류|산|희귀|성장하면서 먹이와 서식 환경이 달라지는 물고기
-연어|Salmon|어류|바다|희귀|일부 종은 번식을 위해 바다에서 강으로 이동
-장어|Japanese eel|어류|연못,바다|초희귀|성장 단계에 따라 생활 환경이 달라지는 어류
-철갑상어|Sturgeon|어류|바다|전설|오래된 계통의 특징을 가진 대형 어류
-금붕어|Goldfish|어류|연못|일반|사람이 기르도록 품종 개량된 물고기
-가물치|Northern snakehead|어류|연못,습지|고급|공기 중 산소도 이용할 수 있는 물고기
-송사리|Japanese rice fish|어류|연못,습지|일반|작고 얕은 물에서 생활하는 물고기
-복어|Pufferfish|어류|바다|희귀|위협을 받으면 몸을 부풀리는 종이 있음
-흰동가리|Clownfish|어류|바다|희귀|말미잘과 상호작용하며 살아가는 물고기
-상어|Shark|어류|바다|초희귀|해양 먹이사슬에서 중요한 역할을 하는 어류
-해마|Seahorse|어류|바다|초희귀|수컷이 알을 품는 독특한 번식 방식으로 알려짐
-바다거북|Sea turtle|파충류|바다|초희귀|바다에서 생활하고 알은 육지에 낳는 파충류
-남생이|Reeves's turtle|파충류|연못|희귀|민물에서 생활하는 거북
-자라|Chinese softshell turtle|파충류|연못|고급|부드러운 피부가 특징인 거북류
-살모사|Viper|파충류|숲,초원|희귀|독을 가진 뱀으로 야생에서 주의가 필요
-구렁이|Rat snake|파충류|숲,초원|희귀|큰 몸집의 뱀으로 설치류 등을 먹음
-도마뱀|Lizard|파충류|숲,초원|일반|비늘로 덮인 피부를 가진 파충류
-장지뱀|Grass lizard|파충류|초원|고급|햇볕이 잘 드는 곳에서 관찰되는 작은 파충류
-이구아나|Iguana|파충류|숲|희귀|일부 종은 식물을 주로 먹는 파충류
-악어|Crocodile|파충류|습지|전설|물속 생활에 적응한 대형 파충류
-카멜레온|Chameleon|파충류|숲|초희귀|눈을 독립적으로 움직일 수 있는 종이 있음
-꿀벌|Honey bee|곤충|숲,초원|일반|꽃가루받이를 돕는 사회성 곤충
-호랑나비|Asian swallowtail|곤충|숲,초원|일반|애벌레와 성충의 모습이 크게 다른 곤충
-장수풍뎅이|Japanese rhinoceros beetle|곤충|숲|고급|수컷의 큰 뿔이 특징
-사슴벌레|Stag beetle|곤충|숲|고급|큰 턱을 가진 딱정벌레
-무당벌레|Ladybug|곤충|숲,초원|일반|진딧물 등을 먹는 종이 많음
-잠자리|Dragonfly|곤충|연못,습지|일반|날개가 발달하고 비행 능력이 뛰어난 곤충
-반딧불이|Firefly|곤충|습지,숲|희귀|빛을 내는 발광 기관을 가진 곤충
-사마귀|Praying mantis|곤충|초원,숲|일반|앞다리를 이용해 먹이를 잡는 포식성 곤충
-메뚜기|Grasshopper|곤충|초원|일반|뒷다리가 발달해 멀리 뛸 수 있는 곤충
-매미|Cicada|곤충|숲|일반|수컷이 소리를 내어 짝을 찾는 곤충
-개미|Ant|곤충|숲,초원|일반|협동 생활을 하는 사회성 곤충
-왕잠자리|Common green darner|곤충|연못,습지|고급|비행 능력이 뛰어난 대형 잠자리
-길앞잡이|Tiger beetle|곤충|초원|희귀|빠르게 달리며 작은 동물을 사냥하는 딱정벌레
-물방개|Predaceous diving beetle|곤충|연못,습지|고급|물속에서 사냥하는 수생 딱정벌레
-대벌레|Stick insect|곤충|숲|희귀|나뭇가지처럼 보이는 몸으로 위장하는 곤충
-누에나방|Silkworm moth|곤충|숲|고급|누에의 성충으로 양잠과 관련이 있음
-장수하늘소|Longhorn beetle|곤충|숲|전설|보전 가치가 높은 대형 딱정벌레류
-민들레|Dandelion|식물|초원|일반|바람을 이용해 씨앗을 퍼뜨리는 식물
-소나무|Korean red pine|식물|숲,산|일반|바늘 모양 잎을 가진 상록 침엽수
-은행나무|Ginkgo|식물|숲,초원|고급|오래된 식물 계통으로 알려진 나무
-벚나무|Cherry tree|식물|숲|일반|봄에 꽃이 피는 나무
-해바라기|Sunflower|식물|초원|일반|큰 꽃과 씨앗이 특징인 식물
-연꽃|Sacred lotus|식물|연못,습지|고급|물 위로 잎과 꽃을 펼치는 수생식물
-끈끈이주걱|Sundew|식물|습지|희귀|끈끈한 잎으로 작은 곤충을 잡는 식충식물
-파리지옥|Venus flytrap|식물|습지|희귀|자극에 반응해 잎을 닫는 식충식물
-주목|Japanese yew|식물|산,숲|초희귀|독성 성분을 가진 부분이 있어 주의가 필요한 나무
+참개구리|Black-spotted pond frog|양서류|연못,습지|일반|논과 연못 주변에서 볼 수 있는 개구리|🐸
+청개구리|Japanese tree frog|양서류|숲,습지|고급|나뭇잎과 풀 위에서 생활하는 작은 개구리|🐸
+도롱뇽|Korean salamander|양서류|숲,습지|고급|축축한 숲 바닥과 물가에서 발견되는 양서류|🦎
+맹꽁이|Korean narrow-mouthed frog|양서류|초원,습지|희귀|비가 오는 시기에 땅속에서 나와 활동하는 개구리|🐸
+금개구리|Seoul pond frog|양서류|연못,습지|희귀|습지와 논 주변에서 살아가는 우리나라의 개구리|🐸
+두꺼비|Asian common toad|양서류|숲,초원|일반|건조한 곳에서도 비교적 잘 살아가는 양서류|🐸
+산개구리|Rana dybowskii|양서류|산,숲|고급|산지 계곡과 숲 주변에서 볼 수 있는 개구리|🐸
+수달|Eurasian otter|포유류|호수,연못,습지|희귀|물고기를 잡아먹으며 물가에서 생활하는 포유류|🦦
+고라니|Water deer|포유류|숲,습지|일반|우리나라의 숲과 풀밭에서 볼 수 있는 사슴과 동물|🦌
+너구리|Raccoon dog|포유류|숲,산|일반|숲과 산 주변에서 다양한 먹이를 먹는 포유류|🦝
+오소리|Asian badger|포유류|숲,산|고급|땅을 파서 굴을 만들고 생활하는 포유류|🦡
+멧돼지|Wild boar|포유류|숲,산|고급|잡식성이며 숲속을 돌아다니며 먹이를 찾는 동물|🐗
+다람쥐|Siberian chipmunk|포유류|숲,산|일반|도토리와 씨앗 등을 모아 먹는 작은 포유류|🐿️
+청설모|Red squirrel|포유류|숲|일반|나무를 잘 타며 열매와 씨앗을 먹는 동물|🐿️
+산양|Long-tailed goral|포유류|산|초희귀|가파른 바위산에서 생활하는 초식동물|🐐
+삵|Leopard cat|포유류|숲,습지|희귀|우리나라에 서식하는 야생 고양잇과 동물|🐈
+하늘다람쥐|Siberian flying squirrel|포유류|숲|희귀|몸 옆의 막을 이용해 나무 사이를 활공하는 동물|🐿️
+담비|Yellow-throated marten|포유류|숲,산|희귀|숲에서 작은 동물과 열매를 먹는 포유류|🦦
+고슴도치|Amur hedgehog|포유류|숲,초원|고급|등에 난 가시로 몸을 보호하는 작은 포유류|🦔
+박쥐|Bat|포유류|숲,산|고급|날개로 날며 많은 종류가 밤에 활동하는 포유류|🦇
+참새|Eurasian tree sparrow|조류|숲,초원|일반|사람이 사는 곳 주변에서도 흔히 볼 수 있는 작은 새|🐦
+까치|Oriental magpie|조류|숲,초원|일반|검은색과 흰색 깃털이 특징인 새|🐦
+까마귀|Carrion crow|조류|숲,산|일반|뛰어난 학습 능력을 보이는 새|🐦‍⬛
+박새|Japanese tit|조류|숲|일반|나무 사이를 오가며 곤충을 잡아먹는 작은 새|🐦
+물총새|Common kingfisher|조류|호수,연못|고급|물속으로 뛰어들어 물고기를 잡는 새|🐦
+왜가리|Grey heron|조류|호수,연못,습지|고급|긴 다리로 물가를 걸으며 물고기를 사냥하는 새|🪶
+백로|Egret|조류|호수,연못,습지|고급|흰 깃털과 긴 다리가 특징인 물새|🪶
+원앙|Mandarin duck|조류|호수,연못|희귀|수컷의 화려한 깃털이 특징인 오리류|🦆
+수리부엉이|Eurasian eagle-owl|조류|숲,산|희귀|큰 눈과 귀깃이 특징인 야행성 맹금류|🦉
+황조롱이|Common kestrel|조류|초원,산|고급|공중에서 정지 비행을 하며 먹이를 찾는 맹금류|🦅
+큰고니|Whooper swan|조류|호수,연못,습지|희귀|겨울철 물가에서 관찰할 수 있는 큰 물새|🦢
+노랑부리저어새|Eurasian spoonbill|조류|습지|희귀|주걱처럼 생긴 부리로 물속 먹이를 찾는 새|🪶
+후투티|Eurasian hoopoe|조류|초원,숲|고급|머리의 독특한 깃털 장식이 눈에 띄는 새|🐦
+딱따구리|Great spotted woodpecker|조류|숲|고급|나무를 두드려 곤충을 찾는 새|🐦
+제비|Barn swallow|조류|초원,습지|일반|날면서 곤충을 잡아먹는 새|🐦
+꿩|Common pheasant|조류|초원,숲|일반|땅 위에서 먹이를 찾는 꿩과의 새|🐦
+잉어|Common carp|어류|호수,연못|일반|민물에서 생활하며 다양한 먹이를 먹는 물고기|🐟
+붕어|Carassius auratus|어류|호수,연못|일반|연못과 호수에서 흔히 볼 수 있는 민물고기|🐟
+피라미|Zacco platypus|어류|호수,연못|일반|하천과 물가에서 무리 지어 생활하는 작은 물고기|🐟
+미꾸라지|Oriental weatherfish|어류|호수,연못,습지|일반|진흙이 있는 얕은 물에서 생활하는 물고기|🐟
+메기|Amur catfish|어류|호수,연못|고급|입 주변의 수염으로 먹이를 찾는 민물고기|🐟
+쏘가리|Mandarin fish|어류|호수,연못|고급|다른 물고기를 잡아먹는 민물고기|🐟
+은어|Plecoglossus altivelis|어류|호수,연못|고급|맑은 물에서 생활하며 바위의 조류를 먹는 물고기|🐟
+연어|Salmon|어류|바다|고급|성장한 뒤 바다에서 생활하고 산란기에 강으로 돌아오는 물고기|🐟
+장어|Japanese eel|어류|호수,연못,바다|희귀|성장 단계에 따라 서식 환경이 달라지는 물고기|🐟
+철갑상어|Sturgeon|어류|바다|희귀|단단한 골판이 몸을 덮고 있는 물고기 무리|🐟
+꺽지|Korean aucha perch|어류|호수,연못|고급|우리나라의 맑은 하천에서 볼 수 있는 민물고기|🐟
+빙어|Japanese smelt|어류|호수,연못|고급|차가운 호수에서 생활하는 작은 물고기|🐟
+가물치|Northern snakehead|어류|호수,연못,습지|고급|산소가 부족한 환경에서도 잘 견디는 물고기|🐟
+복어|Pufferfish|어류|바다|고급|위협을 받으면 몸을 부풀리는 물고기|🐡
+흰동가리|Ocellaris clownfish|어류|바다|고급|말미잘과 함께 생활하는 주황색 물고기|🐠
+혹등고래|Humpback whale|포유류|바다|전설|긴 가슴지느러미와 도약 행동으로 알려진 대형 고래|🐋
+점박이물범|Spotted seal|포유류|바다|희귀|몸에 점무늬가 있는 바다 포유류|🦭
+남방큰돌고래|Indo-Pacific bottlenose dolphin|포유류|바다|희귀|제주도 주변 바다에서 관찰되는 돌고래|🐬
+바다거북|Sea turtle|파충류|바다|희귀|바다에서 생활하며 알을 낳을 때 육지로 올라오는 파충류|🐢
+푸른바다거북|Green sea turtle|파충류|바다|희귀|해초와 해조류 등을 먹는 바다거북|🐢
+남생이|Reeves's turtle|파충류|연못,습지|희귀|민물에서 생활하는 우리나라의 토종 거북|🐢
+자라|Chinese softshell turtle|파충류|호수,연못|고급|부드러운 가죽 같은 등딱지가 특징인 거북|🐢
+살모사|Sakishima habu|파충류|숲,산|희귀|독을 가진 뱀으로 야생에서 주의해야 하는 동물|🐍
+구렁이|Rat snake|파충류|숲,산|고급|몸이 길고 주로 작은 동물을 먹는 뱀|🐍
+도마뱀|Lizard|파충류|숲,산|일반|비늘로 덮인 피부를 가진 파충류|🦎
+꿀벌|Honey bee|곤충|숲,초원|일반|꽃가루받이를 돕고 꿀을 만드는 사회성 곤충|🐝
+호랑나비|Asian swallowtail|곤충|숲,초원|고급|노란색과 검은색 무늬가 특징인 나비|🦋
+장수풍뎅이|Japanese rhinoceros beetle|곤충|숲|고급|수컷의 큰 뿔이 특징인 딱정벌레|🪲
+사슴벌레|Stag beetle|곤충|숲|고급|큰 턱으로 알려진 딱정벌레|🪲
+무당벌레|Ladybird beetle|곤충|숲,초원|일반|작은 진딧물 등을 먹는 딱정벌레|🐞
+잠자리|Dragonfly|곤충|호수,연못,습지|일반|날개가 두 쌍이며 날아다니는 곤충|🪰
+반딧불이|Firefly|곤충|숲,습지|희귀|빛을 내는 발광 기관이 있는 곤충|✨
+사마귀|Praying mantis|곤충|초원,숲|고급|앞다리로 먹이를 붙잡는 포식성 곤충|🦗
+장수잠자리|Giant darner|곤충|연못,습지|고급|큰 몸과 빠른 비행이 특징인 잠자리|🪰
+물방개|Great diving beetle|곤충|연못,습지|일반|뒷다리를 이용해 물속을 헤엄치는 수서곤충|🪲
+물자라|Appasus japonicus|곤충|연못,습지|고급|물속에서 작은 동물을 사냥하는 곤충|🪲
+왕잠자리|Common green darner|곤충|연못,습지|고급|연못 주변에서 빠르게 날아다니는 잠자리|🪰
+길앞잡이|Tiger beetle|곤충|초원,산|고급|빠르게 달리며 작은 곤충을 사냥하는 딱정벌레|🪲
+제비나비|Chinese windmill|곤충|숲,초원|고급|검은 날개와 꼬리 모양 돌기가 특징인 나비|🦋
+큰줄흰나비|Large white butterfly|곤충|초원|일반|흰 날개에 검은 무늬가 있는 나비|🦋
+민들레|Dandelion|식물|초원|일반|씨앗이 바람을 타고 퍼지는 꽃식물|🌼
+소나무|Japanese red pine|식물|숲,산|일반|바늘 모양 잎을 가진 상록수|🌲
+은행나무|Ginkgo biloba|식물|숲,초원|일반|부채 모양 잎을 가진 나무|🌳
+벚나무|Cherry blossom|식물|숲,산|일반|봄에 꽃을 피우는 나무|🌸
+해바라기|Sunflower|식물|초원|일반|큰 꽃과 씨앗으로 잘 알려진 식물|🌻
+연꽃|Sacred lotus|식물|연못,습지|고급|물 위로 잎과 꽃을 높이 올리는 수생식물|🪷
+끈끈이주걱|Sundew|식물|습지|희귀|끈끈한 잎으로 작은 곤충을 붙잡는 식충식물|🌱
+파리지옥|Venus flytrap|식물|습지|희귀|잎을 빠르게 닫아 작은 먹이를 붙잡는 식물|🌿
+주목|Japanese yew|식물|산,숲|고급|늘푸른 잎을 가진 나무로 씨앗 주변에 붉은 구조가 생김|🌲
+으름덩굴|Akebia quinata|식물|숲|일반|덩굴로 자라며 열매가 열리는 식물|🌿
+산철쭉|Rhododendron yedoense|식물|산|일반|봄에 분홍색 계열의 꽃을 피우는 관목|🌺
+억새|Silver grass|식물|초원,산|일반|가을에 은빛 꽃차례가 돋보이는 풀|🌾
+갈대|Common reed|식물|습지,연못|일반|물가와 습지에서 무리 지어 자라는 키 큰 풀|🌾
+부들|Broadleaf cattail|식물|습지,연못|일반|갈색의 길쭉한 꽃차례가 특징인 습지식물|🌱
+수련|Water lily|식물|연못,습지|일반|물 위에 둥근 잎과 꽃을 띄우는 수생식물|🪷
+검정말|Hydrilla|식물|연못|일반|물속에서 자라며 작은 수생동물의 서식처가 되는 식물|🌿
+갯메꽃|Beach morning glory|식물|바다|일반|해안 모래땅에서 자라는 덩굴식물|🌸
+갯완두|Beach pea|식물|바다|일반|해안 모래땅에서 자라며 자주색 꽃을 피우는 식물|🌱
 """
 
 SPECIES = []
 for line in RAW_SPECIES.strip().splitlines():
-    parts = [x.strip() for x in line.split("|")]
-    if len(parts) == 6:
-        name, english, category, habitat, rarity, description = parts
+    parts = [part.strip() for part in line.split("|")]
+    if len(parts) == 7:
+        name, english, category, habitat, rarity, description, emoji = parts
         SPECIES.append({
             "name": name,
             "english": english,
             "category": category,
-            "habitat": [x.strip() for x in habitat.split(",")],
+            "habitat": habitat.split(","),
             "rarity": rarity,
             "description": description,
+            "emoji": emoji,
         })
 
-# =========================================================
-# 6. 지형별 서식지 연결
-# 한 생물은 여러 지형의 도감에 표시될 수 있다.
-# =========================================================
-TERRAIN_HABITAT_MATCH = {
-    "숲": ["숲"],
-    "호수·연못": ["연못"],
-    "바다": ["바다"],
-    "산": ["산"],
-    "초원": ["초원"],
-    "습지": ["습지"],
-}
+SPECIES_BY_NAME = {item["name"]: item for item in SPECIES}
 
-def get_terrain_species(terrain):
-    habitats = TERRAIN_HABITAT_MATCH[terrain]
-    return [
-        c for c in SPECIES
-        if any(h in habitats for h in c["habitat"])
-    ]
+# -------------------- 생명과학 퀴즈 --------------------
+# 희귀도가 높을수록 더 어려운 문제 묶음을 사용한다.
+# 각 문항은 질문, 보기 4개, 정답 번호, 해설 순서이다.
 
-# =========================================================
-# 7. 생명과학 퀴즈
-# =========================================================
 QUIZZES = {
-    "쉬움": [
-        ("식물의 광합성에 주로 필요한 에너지원은?", ["달빛", "햇빛", "소리", "바람"], 1, "광합성은 빛에너지를 이용해 유기물을 만드는 과정이야."),
-        ("유전 정보를 주로 저장하는 물질은?", ["DNA", "지방", "물", "녹말"], 0, "DNA에는 생물의 유전 정보가 저장되어 있어."),
-        ("다음 중 포유류는?", ["개구리", "참새", "고라니", "잉어"], 2, "고라니는 포유류야."),
-        ("곤충의 다리는 보통 몇 쌍일까?", ["1쌍", "2쌍", "3쌍", "4쌍"], 2, "곤충의 다리는 세 쌍이야."),
-        ("먹이사슬에서 식물의 역할은?", ["생산자", "분해자", "포식자", "기생자"], 0, "식물은 광합성으로 유기물을 만들어."),
-        ("물고기가 주로 호흡하는 기관은?", ["폐", "아가미", "피부만", "기관"], 1, "대부분의 물고기는 아가미로 산소를 얻어."),
-        ("개구리는 어느 분류에 속할까?", ["파충류", "양서류", "포유류", "조류"], 1, "개구리는 양서류야."),
-        ("꽃가루받이를 돕는 곤충은?", ["꿀벌", "벼룩", "이", "모기 유충"], 0, "꿀벌은 꽃 사이를 오가며 꽃가루받이를 도와."),
-        ("죽은 생물을 분해하는 생물의 예는?", ["버섯", "사슴", "나비", "참새"], 0, "곰팡이와 많은 세균은 유기물을 분해해."),
-        ("다음 중 파충류는?", ["도마뱀", "수달", "비둘기", "도롱뇽"], 0, "도마뱀은 파충류야."),
-        ("식물의 뿌리가 주로 하는 일은?", ["빛 흡수", "물과 무기질 흡수", "꽃가루 만들기", "씨앗 이동"], 1, "뿌리는 물과 무기질을 흡수해."),
-        ("생물이 살아가는 장소를 무엇이라고 할까?", ["서식지", "염색체", "세포막", "효소"], 0, "서식지는 생물이 살아가는 장소야."),
+    "일반": [
+        ("식물이 광합성을 할 때 주로 흡수하는 기체는?",
+         ["산소", "이산화탄소", "질소", "수소"], 1,
+         "식물은 빛에너지를 이용해 이산화탄소와 물로 유기물을 만듭니다."),
+        ("동물이 숨을 쉴 때 에너지 생산에 주로 이용되는 기체는?",
+         ["산소", "헬륨", "수소", "네온"], 0,
+         "많은 동물은 세포 호흡에 산소를 이용해 에너지를 얻습니다."),
+        ("먹이사슬에서 식물의 일반적인 역할은?",
+         ["분해자", "생산자", "최상위 포식자", "기생생물"], 1,
+         "식물은 광합성으로 스스로 유기물을 만들어 생산자 역할을 합니다."),
+        ("동물의 몸을 지탱하고 보호하는 역할을 하는 구조는?",
+         ["뼈", "엽록체", "꽃가루", "뿌리털"], 0,
+         "척추동물의 뼈는 몸을 지탱하고 내부 기관을 보호합니다."),
+        ("식물의 뿌리가 주로 하는 일은?",
+         ["빛을 감지해 이동하기", "물과 무기 양분 흡수", "소리 내기", "산소만 만들기"], 1,
+         "뿌리는 토양에서 물과 무기 양분을 흡수하는 중요한 역할을 합니다."),
     ],
-    "보통": [
-        ("세포에서 에너지를 만드는 데 중요한 소기관은?", ["리보솜", "미토콘드리아", "핵", "골지체"], 1, "미토콘드리아는 세포 호흡에 중요한 역할을 해."),
-        ("효소의 일반적인 특징은?", ["반응 후 모두 소모된다", "특정 반응을 촉진한다", "모든 물질과 똑같이 반응한다", "항상 고온에서만 작용한다"], 1, "효소는 특정 반응을 빠르게 해."),
-        ("생물 다양성이 높을 때 기대할 수 있는 점은?", ["모든 생물이 사라진다", "환경 변화에 대응할 가능성이 커진다", "먹이 관계가 사라진다", "에너지 흐름이 멈춘다"], 1, "생물 다양성은 생태계 안정성에 도움을 줄 수 있어."),
-        ("DNA 염기 네 가지에 해당하지 않는 것은?", ["아데닌", "티민", "우라실", "구아닌"], 2, "우라실은 RNA에 나타나는 염기야."),
-        ("먹이사슬에서 에너지는 어떻게 이동할까?", ["상위 단계로 갈수록 늘어난다", "일부가 열로 손실된다", "완전히 순환한다", "생산자에게서만 생긴다"], 1, "에너지는 먹이 단계가 올라갈 때 일부 손실돼."),
-        ("개구리의 생활사에서 일반적으로 먼저 나타나는 단계는?", ["성체", "알", "번식 가능한 성체", "겨울잠"], 1, "많은 개구리는 알에서 올챙이를 거쳐 성체가 돼."),
-        ("광합성에 필요한 물질의 조합은?", ["산소와 포도당", "이산화탄소와 물", "질소와 단백질", "녹말과 산소"], 1, "식물은 빛을 이용해 유기물을 만들어."),
-        ("천적이 줄어들면 먹이 생물의 개체 수는?", ["항상 0이 된다", "증가할 수 있다", "반드시 변하지 않는다", "모두 다른 종이 된다"], 1, "천적이 줄면 먹이 생물의 수가 증가할 수 있어."),
-        ("자연선택에 대한 설명으로 알맞은 것은?", ["개체가 의도적으로 유전자를 바꾼다", "유리한 유전적 특징이 더 많이 전달될 수 있다", "모든 개체가 똑같이 진화한다", "진화는 한 개체의 일생에서만 일어난다"], 1, "자연선택은 세대에 걸친 집단의 변화에 영향을 줘."),
-        ("항생제 내성 세균과 관련된 개념은?", ["자연선택", "증발", "광합성", "삼투만"], 0, "내성 세균이 살아남아 증식할 수 있어."),
-        ("생물 분류에서 중요하게 보는 것은?", ["색깔 하나만", "여러 특징과 진화적 관계", "사는 시간만", "몸무게만"], 1, "형태와 유전 정보 등 다양한 자료가 사용돼."),
-        ("분해자의 역할은?", ["빛에너지를 직접 흡수한다", "유기물을 분해해 물질 순환에 기여한다", "모든 동물을 사냥한다", "산소를 없애기만 한다"], 1, "분해자는 물질 순환에 중요한 역할을 해."),
+    "고급": [
+        ("광합성이 주로 일어나는 세포 소기관은?",
+         ["미토콘드리아", "엽록체", "리보솜", "핵"], 1,
+         "엽록체에는 빛에너지를 흡수하는 색소가 있어 광합성이 일어납니다."),
+        ("먹이사슬에서 에너지가 상위 영양 단계로 전달될 때 일반적으로 나타나는 현상은?",
+         ["에너지가 모두 전달된다", "일부 에너지가 생명 활동과 열로 소모된다",
+          "에너지가 새로 만들어진다", "에너지가 사라지지 않고 전부 축적된다"], 1,
+         "생명 활동에 에너지가 사용되며 일부는 열로 방출되므로 다음 단계로 전달되는 에너지는 줄어듭니다."),
+        ("양서류의 일반적인 특징으로 가장 알맞은 것은?",
+         ["모든 종이 평생 바다에서 산다", "생활사에서 물과 육지 환경을 이용하는 종이 많다",
+          "몸이 깃털로 덮여 있다", "모든 종이 알을 낳지 않는다"], 1,
+         "많은 양서류는 물속에서 유생 시기를 보내고 성장하면서 육지에서도 생활합니다."),
+        ("생태계에서 분해자의 중요한 역할은?",
+         ["태양빛을 직접 만든다", "죽은 생물의 물질을 분해해 물질 순환에 기여한다",
+          "모든 생산자를 없앤다", "먹이사슬을 중단시킨다"], 1,
+         "분해자는 사체와 배설물 등을 분해해 물질이 생태계에서 다시 순환하도록 돕습니다."),
+        ("꽃식물에서 씨앗이 만들어지는 과정과 가장 밀접한 것은?",
+         ["수분과 수정", "세포 호흡의 중단", "잎의 탈락", "뿌리의 광합성"], 0,
+         "꽃가루가 암술머리에 옮겨지는 수분 뒤 수정이 일어나면 씨앗이 발달할 수 있습니다."),
     ],
-    "어려움": [
-        ("제한 효소가 유전자 재조합에 활용되는 핵심 이유는?", ["DNA를 무작위로 복제해서", "특정 DNA 염기서열을 인식해 자를 수 있어서", "단백질을 모두 분해해서", "세포막을 만들어서"], 1, "제한 효소는 특정 DNA 서열을 인식해 절단해."),
-        ("DNA 조각을 연결하는 데 사용되는 효소는?", ["DNA 연결 효소", "아밀레이스", "펩신", "락테이스"], 0, "DNA 연결 효소는 DNA 조각을 연결해."),
-        ("PCR에서 DNA를 복제할 때 사용하는 것은?", ["DNA 중합효소", "리파아제", "셀룰레이스", "항체"], 0, "DNA 중합효소는 새로운 DNA 가닥을 합성해."),
-        ("유전적 다양성이 감소하면 생길 수 있는 문제는?", ["환경 변화에 취약해질 수 있다", "모든 질병이 사라진다", "진화가 항상 빨라진다", "개체 수가 반드시 늘어난다"], 0, "유전적 다양성이 낮으면 환경 변화에 취약할 수 있어."),
-        ("세포막을 통한 물의 이동을 설명하는 현상은?", ["삼투", "복제", "전사", "번역"], 0, "삼투는 반투과성 막을 사이에 둔 물의 이동이야."),
-        ("항상성의 의미로 알맞은 것은?", ["내부 상태를 일정 범위로 유지하는 것", "모든 생물이 같은 크기를 갖는 것", "에너지를 쓰지 않는 것", "유전자가 사라지는 것"], 0, "항상성은 체온이나 혈당 등을 일정 범위로 유지하는 능력이야."),
-        ("한 종이 사라졌을 때 다른 종에도 영향이 생길 수 있는 이유는?", ["먹이와 서식지 관계가 있어서", "모든 종이 같은 DNA를 가져서", "생물은 서로 영향을 주지 않아서", "물질 순환이 없어서"], 0, "생물은 먹이 관계와 서식지 등으로 연결되어 있어."),
-        ("DNA 정보를 RNA로 옮기는 단계는?", ["전사", "번역", "복제", "삼투"], 0, "전사는 DNA의 정보를 RNA로 옮기는 과정이야."),
-        ("단백질을 합성하는 세포 소기관은?", ["리보솜", "리소좀", "액포", "세포벽"], 0, "리보솜은 단백질을 합성해."),
-        ("생물 농축이 일어날 가능성이 큰 물질은?", ["잘 분해되고 바로 배출되는 물질", "잘 분해되지 않고 생물체에 축적되는 물질", "물에 닿으면 즉시 사라지는 물질", "생물에 아무 영향이 없는 물질"], 1, "일부 오염 물질은 먹이 관계를 따라 축적될 수 있어."),
-        ("유전자 편집 기술을 평가할 때 고려할 사항은?", ["윤리와 안전성", "글자 수", "색상", "실험실 위치"], 0, "과학적 효과와 함께 안전성과 윤리도 고려해야 해."),
-        ("개체군 크기에 영향을 미치는 요인은?", ["출생·사망·이입·이출", "소리만", "색깔만", "염기 하나만"], 0, "출생과 사망, 이동이 개체군 크기에 영향을 줘."),
+    "희귀": [
+        ("생태계의 생물 다양성을 높게 유지하는 것의 중요한 의미는?",
+         ["모든 생물이 같은 먹이를 먹게 한다",
+          "환경 변화에 대응할 수 있는 생태계의 가능성을 높인다",
+          "분해자의 역할을 없앤다",
+          "생태계에서 에너지 이동을 멈춘다"], 1,
+         "다양한 생물과 유전적 특성은 환경 변화에 대한 생태계의 대응 능력에 기여할 수 있습니다."),
+        ("한 지역에 외래종이 들어와 토종 생물과 먹이·서식지를 경쟁하면 발생할 수 있는 문제는?",
+         ["토종 생물의 개체 수가 감소할 수 있다",
+          "모든 종의 개체 수가 반드시 증가한다",
+          "먹이 관계가 사라진다",
+          "기후가 즉시 일정해진다"], 0,
+         "외래종이 자원을 차지하거나 포식·질병 등을 일으키면 토종 생물에 영향을 줄 수 있습니다."),
+        ("개체군의 크기를 제한할 수 있는 요인으로 가장 알맞은 것은?",
+         ["먹이와 서식 공간의 부족", "항상 일정한 유전자 수",
+          "모든 개체의 동일한 나이", "계절과 무관한 환경"], 0,
+         "먹이, 공간, 질병, 포식 등은 개체군 크기에 영향을 주는 요인입니다."),
+        ("생물 농축이 일어날 때 먹이사슬의 상위 포식자에서 특정 오염 물질의 농도가 높아질 수 있는 이유는?",
+         ["오염 물질이 먹이 관계를 따라 축적될 수 있기 때문에",
+          "포식자는 물을 마시지 않기 때문에",
+          "생산자는 항상 오염 물질을 만들기 때문에",
+          "에너지가 물질로 변하기 때문에"], 0,
+         "분해되기 어렵거나 배출이 느린 오염 물질은 먹이를 통해 전달되고 체내에 축적될 수 있습니다."),
+        ("서식지 단편화가 생물에게 미칠 수 있는 영향은?",
+         ["개체군 사이의 이동과 유전자 교류가 줄어들 수 있다",
+          "모든 생물의 이동이 쉬워진다",
+          "생물 다양성이 항상 증가한다",
+          "먹이사슬이 완전히 없어지지 않는다"], 0,
+         "서식지가 작은 조각으로 나뉘면 생물의 이동과 개체군 사이의 유전자 교류가 제한될 수 있습니다."),
+    ],
+    "초희귀": [
+        ("유전적 다양성이 낮은 작은 개체군에서 특히 우려되는 현상은?",
+         ["유전적 부동과 근친 교배의 영향이 커질 수 있다",
+          "돌연변이가 절대로 일어나지 않는다",
+          "모든 개체가 동일한 환경 적응력을 가진다",
+          "자연선택이 불가능해진다"], 0,
+         "작은 개체군에서는 우연한 유전자 빈도 변화와 근친 교배의 영향이 상대적으로 커질 수 있습니다."),
+        ("기후 변화로 서식 가능 지역이 이동할 때 이동 능력이 낮은 생물이 겪을 수 있는 위험은?",
+         ["적합한 서식지를 따라 이동하지 못할 수 있다",
+          "모든 개체가 즉시 새로운 종이 된다",
+          "먹이가 자동으로 증가한다",
+          "유전 정보가 모두 사라진다"], 0,
+         "기후대가 이동해도 생물이 새로운 적합 서식지에 도달하지 못하면 생존이 어려워질 수 있습니다."),
+        ("생태계에서 핵심종이 사라졌을 때 나타날 수 있는 결과는?",
+         ["먹이 관계와 생태계 구조가 크게 변할 수 있다",
+          "다른 모든 종이 반드시 번성한다",
+          "물질 순환이 즉시 멈춘다",
+          "생물 다양성이 항상 높아진다"], 0,
+         "핵심종은 생태계 구조에 큰 영향을 주므로 사라지면 여러 종의 관계가 달라질 수 있습니다."),
+        ("멸종 위기 생물의 보전 계획에서 서식지 보전이 중요한 이유는?",
+         ["먹이·번식 장소와 생태적 관계를 함께 보호할 수 있기 때문에",
+          "생물의 모든 질병을 없애기 때문에",
+          "모든 종의 유전자를 같게 만들기 때문에",
+          "생태계의 계절 변화를 없애기 때문에"], 0,
+         "서식지는 먹이, 번식, 은신처 등 생존에 필요한 조건을 제공하므로 보전의 핵심입니다."),
+    ],
+    "전설": [
+        ("어떤 개체군에서 특정 유전 형질의 빈도가 여러 세대에 걸쳐 달라질 수 있는 요인을 가장 정확히 묶은 것은?",
+         ["자연선택, 돌연변이, 유전자 흐름, 유전적 부동",
+          "개체의 의지만으로 생기는 변화",
+          "먹이의 양만으로 결정되는 변화",
+          "모든 개체에서 동일하게 일어나는 변화"], 0,
+         "진화는 자연선택뿐 아니라 돌연변이, 유전자 흐름, 유전적 부동 등 여러 요인의 영향을 받습니다."),
+        ("서식지 복원 사업의 효과를 평가할 때 가장 신뢰할 만한 접근은?",
+         ["복원 전후의 생물·환경 자료를 비교하고 대조 지역도 함께 조사한다",
+          "복원 직후 한 종만 한 번 관찰한다",
+          "사진 한 장만으로 모든 효과를 판단한다",
+          "조사 결과와 관계없이 성공으로 결론 내린다"], 0,
+         "전후 자료와 비교 가능한 대조 지역을 함께 살펴보면 자연적인 변동과 사업 효과를 구분하는 데 도움이 됩니다."),
+        ("작은 개체군의 보전에서 개체 수 증가와 함께 유전적 다양성을 고려해야 하는 이유는?",
+         ["유전적 다양성이 낮으면 환경 변화와 질병에 취약해질 수 있기 때문에",
+          "유전적 다양성이 있으면 진화가 멈추기 때문에",
+          "개체 수가 늘면 유전자는 모두 같아지기 때문에",
+          "유전적 다양성은 생존과 관계가 없기 때문에"], 0,
+         "유전적 다양성은 개체군이 환경 변화와 질병에 대응할 수 있는 잠재력과 관련이 있습니다."),
+        ("먹이그물에서 한 종의 감소가 다른 여러 종에 영향을 줄 수 있는 가장 적절한 이유는?",
+         ["여러 종이 포식·먹이·경쟁 관계로 연결되어 있기 때문에",
+          "모든 종이 같은 유전자를 갖기 때문에",
+          "생태계에는 한 가지 먹이 관계만 있기 때문에",
+          "에너지가 생태계에서 순환하지 않기 때문에"], 0,
+         "먹이그물은 여러 먹이 관계가 연결된 구조이므로 한 종의 변화가 다른 종에 연쇄적으로 영향을 줄 수 있습니다."),
     ],
 }
-QUIZ_REWARD = {"쉬움": 10, "보통": 25, "어려움": 50}
 
-# =========================================================
-# 8. 세션 상태
-# 저장 기능 없이 현재 세션에서만 관리
-# =========================================================
-def initialize_state():
+RARITY_ORDER = ["일반", "고급", "희귀", "초희귀", "전설"]
+
+# -------------------- 세션 상태 --------------------
+
+def init_state():
     defaults = {
-        "page": "🌲 탐험하기",
         "terrain": "숲",
+        "page": "🌲 탐험하기",
         "discovered": {},
         "xp": 0,
         "total_found": 0,
-        "quiz_correct": 0,
-        "quiz_answered": 0,
-        "latest_name": None,
-        "latest_message": "",
-        "latest_is_new": False,
-        "quiz_difficulty": "쉬움",
-        "quiz_question": None,
+        "total_encounters": 0,
+        "total_missed": 0,
+        "current_creature": None,
+        "current_question": None,
         "quiz_options": None,
         "quiz_answer": None,
-        "quiz_explanation": None,
-        "quiz_current_difficulty": None,
-        "quiz_id": 0,
-        "quiz_done": False,
-        "quiz_feedback": None,
-        "quiz_selected": None,
+        "quiz_submitted": False,
+        "last_result": None,
+        "encounter_id": 0,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
-            st.session_state[key] = value.copy() if isinstance(value, (dict, list)) else value
+            st.session_state[key] = value
 
-initialize_state()
+init_state()
 
-# =========================================================
-# 9. 게임 함수
-# =========================================================
-def get_level(xp):
-    return xp // 100 + 1
+# -------------------- 사진 가져오기 --------------------
 
-def get_level_progress(xp):
-    return (xp % 100) / 100
+@st.cache_data(ttl=86400, show_spinner=False)
+def get_creature_image(korean_name, english_name):
+    """
+    한국어·영어 위키백과와 Wikimedia Commons를 순서대로 검색.
+    찾지 못하면 None을 반환한다.
+    """
+    headers = {"User-Agent": "BioHunterEducationalApp/1.0"}
+    names = [korean_name]
+    if english_name and english_name != korean_name:
+        names.append(english_name)
 
-def select_terrain(terrain):
-    # 사이드바와 지형 카드가 같은 상태를 사용한다.
-    st.session_state.terrain = terrain
+    # 1. 한국어 및 영어 위키백과 대표 사진
+    for lang, name in [
+        ("ko", korean_name),
+        ("en", english_name),
+    ]:
+        if not name:
+            continue
+        try:
+            url = (
+                f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/"
+                + quote(name.replace(" ", "_"), safe="")
+            )
+            response = requests.get(url, headers=headers, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                image_url = (
+                    data.get("thumbnail", {}).get("source")
+                    or data.get("originalimage", {}).get("source")
+                )
+                if image_url:
+                    return image_url
+        except (requests.RequestException, ValueError):
+            pass
+
+    # 2. Wikimedia Commons 이미지 검색
+    for name in names:
+        try:
+            response = requests.get(
+                "https://commons.wikimedia.org/w/api.php",
+                params={
+                    "action": "query",
+                    "generator": "search",
+                    "gsrsearch": f'filetype:bitmap "{name}"',
+                    "gsrnamespace": 6,
+                    "gsrlimit": 6,
+                    "prop": "imageinfo",
+                    "iiprop": "url|mime",
+                    "iiurlwidth": 700,
+                    "format": "json",
+                },
+                headers=headers,
+                timeout=7,
+            )
+            if response.status_code == 200:
+                pages = response.json().get("query", {}).get("pages", {})
+                for page in pages.values():
+                    image_info = page.get("imageinfo", [{}])[0]
+                    mime = image_info.get("mime", "")
+                    if mime.startswith("image/"):
+                        return (
+                            image_info.get("thumburl")
+                            or image_info.get("url")
+                        )
+        except (requests.RequestException, ValueError, IndexError):
+            pass
+
+    return None
+
+def show_creature_image(creature, width=300):
+    image_url = get_creature_image(
+        creature["name"], creature["english"]
+    )
+    if image_url:
+        try:
+            st.image(image_url, width=width)
+        except Exception:
+            st.markdown(
+                f"<div style='font-size:90px;text-align:center;'>"
+                f"{creature['emoji']}</div>",
+                unsafe_allow_html=True,
+            )
+    else:
+        st.markdown(
+            f"<div style='font-size:90px;text-align:center;'>"
+            f"{creature['emoji']}</div>",
+            unsafe_allow_html=True,
+        )
+        st.caption("사진을 찾지 못해 대표 아이콘을 표시했어요.")
+
+# -------------------- 게임 로직 --------------------
+
+def get_terrain_species(terrain):
+    allowed = TERRAINS[terrain]["habitats"]
+    return [
+        creature for creature in SPECIES
+        if any(habitat in allowed for habitat in creature["habitat"])
+    ]
+
+def choose_rarity():
+    # 희귀도 확률은 지형이나 발견 수와 무관하게 동일하게 유지
+    rarities = list(RARITY_INFO.keys())
+    weights = [RARITY_INFO[r]["weight"] for r in rarities]
+    return random.choices(rarities, weights=weights, k=1)[0]
 
 def choose_creature(terrain):
     candidates = get_terrain_species(terrain)
-
     if not candidates:
-        candidates = SPECIES
+        return random.choice(SPECIES)
 
-    weights = []
-    for creature in candidates:
-        rarity_weight = RARITY_INFO[creature["rarity"]]["weight"]
+    # 먼저 희귀도를 독립적으로 뽑고, 해당 희귀도의 생물을 선택
+    rarity = choose_rarity()
+    same_rarity = [c for c in candidates if c["rarity"] == rarity]
 
-        # 미발견 생물이 더 잘 나오도록 보정
-        discovery_weight = (
-            0.35 if creature["name"] in st.session_state.discovered
-            else 2.8
+    # 현재 지형에 해당 희귀도 생물이 없다면 지형 내 가능한 희귀도 중 선택
+    if not same_rarity:
+        available_rarities = list({c["rarity"] for c in candidates})
+        rarity = random.choice(available_rarities)
+        same_rarity = [c for c in candidates if c["rarity"] == rarity]
+
+    # 중복 발견 생물은 약간 더 자주 등장하도록 가중치 부여
+    # 새 생물도 등장할 수 있도록 가중치를 과도하게 높이지 않는다.
+    weights = [
+        1.8 if c["name"] in st.session_state.discovered else 1.0
+        for c in same_rarity
+    ]
+    return random.choices(same_rarity, weights=weights, k=1)[0]
+
+def choose_question(creature):
+    rarity = creature["rarity"]
+    question = random.choice(QUIZZES[rarity])
+    text, options, answer, explanation = question
+    shuffled = list(enumerate(options))
+    random.shuffle(shuffled)
+
+    correct_new_index = next(
+        i for i, original_index in enumerate(
+            [original_index for original_index, _ in shuffled]
         )
-        weights.append(rarity_weight * discovery_weight)
+        if original_index == answer
+    )
+    return {
+        "text": text,
+        "options": [option for _, option in shuffled],
+        "answer": correct_new_index,
+        "explanation": explanation,
+        "rarity": rarity,
+    }
 
-    return random.choices(candidates, weights=weights, k=1)[0]
+def start_exploration():
+    creature = choose_creature(st.session_state.terrain)
+    st.session_state.current_creature = creature
+    st.session_state.current_question = choose_question(creature)
+    st.session_state.quiz_options = None
+    st.session_state.quiz_answer = None
+    st.session_state.quiz_submitted = False
+    st.session_state.last_result = None
+    st.session_state.encounter_id += 1
+    st.session_state.total_encounters += 1
 
-def discover_creature(terrain):
-    creature = choose_creature(terrain)
-    name = creature["name"]
-    is_new = name not in st.session_state.discovered
+def resolve_answer(selected_answer):
+    creature = st.session_state.current_creature
+    question = st.session_state.current_question
 
-    if is_new:
-        st.session_state.discovered[name] = {
-            **creature,
-            "count": 1,
-            "first_terrain": terrain,
-        }
-        xp_gain = RARITY_INFO[creature["rarity"]]["xp"]
-        message = f"🎉 새로운 생물 발견! {name} (+{xp_gain} XP)"
+    if not creature or not question:
+        return
+
+    if selected_answer is None:
+        st.warning("답을 하나 선택해 줘.")
+        return
+
+    st.session_state.quiz_submitted = True
+    st.session_state.quiz_answer = selected_answer
+
+    if selected_answer == question["answer"]:
+        name = creature["name"]
+        rarity = creature["rarity"]
+        st.session_state.xp += RARITY_INFO[rarity]["xp"]
+
+        if name in st.session_state.discovered:
+            st.session_state.discovered[name]["count"] += 1
+            st.session_state.xp += 3
+            st.session_state.last_result = "duplicate"
+        else:
+            st.session_state.discovered[name] = {
+                "count": 1,
+                "first_terrain": st.session_state.terrain,
+            }
+            st.session_state.total_found += 1
+            st.session_state.last_result = "new"
     else:
-        st.session_state.discovered[name]["count"] += 1
-        xp_gain = 3
-        message = f"🔎 {name}을(를) 다시 만났어! (+3 XP)"
+        st.session_state.total_missed += 1
+        st.session_state.last_result = "missed"
 
-    st.session_state.xp += xp_gain
-    st.session_state.total_found += 1
-    st.session_state.latest_name = name
-    st.session_state.latest_message = message
-    st.session_state.latest_is_new = is_new
+# -------------------- 사이드바 --------------------
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def get_wikipedia_image(english_name):
-    try:
-        title = english_name.replace(" ", "_")
-        url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{title}"
-        response = requests.get(
-            url,
-            headers={"User-Agent": "BioHunterEducationalApp/1.0"},
-            timeout=4,
-        )
-        if response.status_code == 200:
-            data = response.json()
-            return data.get("thumbnail", {}).get("source")
-    except (requests.RequestException, ValueError):
-        pass
-    return None
-
-# =========================================================
-# 10. 사이드바
-# =========================================================
 with st.sidebar:
-    st.markdown("# 🌿 바이오 헌터")
-    st.caption("지형을 탐험하고 생물 도감을 완성하자!")
+    st.title("🌿 바이오 헌터")
+    st.caption("탐험하고, 배우고, 수집하자!")
 
-    st.markdown("---")
-    st.markdown(f"### 🧭 탐험 레벨 {get_level(st.session_state.xp)}")
-    st.progress(get_level_progress(st.session_state.xp))
-    st.caption(f"{st.session_state.xp % 100}/100 XP · 다음 레벨까지")
-
-    st.markdown("---")
-    st.metric("📚 발견한 종", f"{len(st.session_state.discovered)} / {len(SPECIES)}")
-    st.metric("🔎 총 발견 횟수", st.session_state.total_found)
-
-    st.markdown("---")
-    st.markdown("### 🗺️ 현재 지형")
-
-    # key="terrain"으로 지형 카드와 상태를 공유한다.
     st.selectbox(
         "탐험할 지형",
         list(TERRAINS.keys()),
         key="terrain",
-        format_func=lambda t: f"{TERRAINS[t]['emoji']} {t}",
     )
 
-    st.markdown("---")
-    st.radio(
-        "메뉴",
-        [
-            "🌲 탐험하기",
-            "📖 생물 도감",
-            "🧬 생명과학 퀴즈",
-            "🏆 업적",
-            "⚙️ 설정",
-        ],
-        key="page",
-    )
+    st.divider()
+    st.metric("🧬 발견한 종류", f"{len(st.session_state.discovered)} / {len(SPECIES)}")
+    st.metric("⭐ 경험치", st.session_state.xp)
+    st.metric("🔎 탐험 횟수", st.session_state.total_encounters)
 
-    st.markdown("---")
-    st.caption("기록은 현재 세션에서만 유지돼.")
+    st.divider()
+    pages = [
+        "🌲 탐험하기",
+        "📖 생물 도감",
+        "🏆 업적",
+        "⚙️ 설정",
+    ]
+    st.radio("메뉴", pages, key="page")
 
-# =========================================================
-# 11. 공통 헤더
-# =========================================================
-st.markdown("""
-<div class="hero">
-    <h1>🌿 바이오 헌터</h1>
-    <p>지형을 탐험하고 자연 속 생물을 발견해 봐!</p>
-</div>
-""", unsafe_allow_html=True)
+# -------------------- 공통 헤더 --------------------
+
+st.title("🌿 바이오 헌터")
+st.caption("생명과학 지식을 활용해 자연 속 생물을 발견해 보세요.")
 
 # =========================================================
-# 12. 탐험 화면
+# 탐험하기
 # =========================================================
+
 if st.session_state.page == "🌲 탐험하기":
-    st.subheader("🗺️ 탐험할 지형을 선택해 봐!")
-
-    terrain_names = list(TERRAINS.keys())
-    terrain_cols = st.columns(3)
-
-    for index, terrain_name in enumerate(terrain_names):
-        with terrain_cols[index % 3]:
-            info = TERRAINS[terrain_name]
-            is_selected = terrain_name == st.session_state.terrain
-
-            border_color = "#3f8752" if is_selected else "#d8e6d1"
-            selected_text = "✅ 현재 선택된 지형" if is_selected else "탐험할 지형"
-
-            st.markdown(
-                f"""
-                <div class="terrain-card"
-                     style="border-color:{border_color}">
-                    <div style="font-size:36px">{info['emoji']}</div>
-                    <h3>{terrain_name}</h3>
-                    <div class="muted">{info['description']}</div>
-                    <p><b>{selected_text}</b></p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-            st.button(
-                f"{'✅ 선택됨' if is_selected else '🧭 이 지형 선택하기'}",
-                key=f"terrain_card_{terrain_name}",
-                use_container_width=True,
-                disabled=is_selected,
-                on_click=select_terrain,
-                args=(terrain_name,),
-            )
-
-    # 선택 결과를 세션 상태에서 다시 읽는다.
     terrain = st.session_state.terrain
     terrain_info = TERRAINS[terrain]
-    candidates = get_terrain_species(terrain)
 
-    st.markdown("---")
-    st.markdown(f"## {terrain_info['emoji']} {terrain} 탐험")
-    st.write(terrain_info["description"])
-    st.caption(f"이 지형에서 발견할 수 있는 생물 후보: {len(candidates)}종")
+    st.header(f"{terrain_info['emoji']} {terrain} 탐험")
+    st.write(terrain_info["description"] + "을 탐험해 보자.")
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("🧭 탐험 레벨", get_level(st.session_state.xp))
-    c2.metric("🌱 발견한 종", len(st.session_state.discovered))
-    c3.metric("✨ 경험치", st.session_state.xp)
+    col1, col2, col3 = st.columns(3)
+    col1.metric("발견한 생물", len(st.session_state.discovered))
+    col2.metric("획득 경험치", st.session_state.xp)
+    col3.metric("놓친 생물", st.session_state.total_missed)
 
-    if st.button(
-        f"{terrain_info['emoji']} {terrain} 탐험하고 생물 발견하기",
-        type="primary",
-        use_container_width=True,
-    ):
-        discover_creature(terrain)
+    if st.session_state.current_creature is None:
+        st.info("탐험을 시작하면 야생 생물과 생명과학 퀴즈가 나타나요.")
+        if st.button("🔍 탐험 시작!", type="primary", use_container_width=True):
+            start_exploration()
+            st.rerun()
+    else:
+        creature = st.session_state.current_creature
+        question = st.session_state.current_question
 
-    if st.session_state.latest_message:
-        st.success(st.session_state.latest_message)
+        st.divider()
+        st.subheader("야생 생물을 발견했다!")
+        st.write(
+            f"{RARITY_INFO[creature['rarity']]['emoji']} "
+            f"**{creature['rarity']} 생물**이 나타났어!"
+        )
 
-    latest_name = st.session_state.latest_name
-    if latest_name and latest_name in st.session_state.discovered:
-        creature = st.session_state.discovered[latest_name]
-        rarity_info = RARITY_INFO[creature["rarity"]]
-
-        st.markdown("### 🐾 발견 결과")
         left, right = st.columns([1, 1.3])
-
         with left:
-            image_url = get_wikipedia_image(creature["english"])
-            if image_url:
-                st.image(image_url, width=230)
-            else:
-                st.markdown("## 🌱")
-                st.caption("사진을 불러오지 못했어.")
-
+            show_creature_image(creature, width=300)
         with right:
-            st.markdown(f"## {creature['name']}")
-            st.caption(creature["english"])
-            st.markdown(
-                f"<span class='tag'>{creature['category']}</span>"
-                f"<span class='tag'>{terrain_info['emoji']} {terrain}</span>"
-                f"<span class='tag' style='color:{rarity_info['color']}'>"
-                f"{rarity_info['emoji']} {creature['rarity']}</span>",
-                unsafe_allow_html=True,
-            )
-            st.write(creature["description"])
-            st.write(f"도감 발견 횟수: {creature['count']}회")
+            st.markdown(f"### {creature['emoji']} 생물 정보")
+            st.write(f"**분류:** {creature['category']}")
+            st.write(f"**서식지:** {', '.join(creature['habitat'])}")
+            st.write(f"**희귀도:** {creature['rarity']}")
+            st.write("정답을 맞히면 생물을 획득할 수 있어!")
 
-    st.markdown("---")
-    st.markdown("### 🎲 희귀도와 최초 발견 보상")
+        st.divider()
+        st.subheader("🧠 생명과학 퀴즈")
+        st.write(f"**{question['text']}**")
 
-    rarity_cols = st.columns(5)
-    for col, (rarity, info) in zip(rarity_cols, RARITY_INFO.items()):
-        with col:
-            st.markdown(
-                f"""
-                <div class="creature-card" style="text-align:center">
-                    <div style="font-size:28px">{info['emoji']}</div>
-                    <b style="color:{info['color']}">{rarity}</b>
-                    <div class="muted">가중치 {info['weight']}</div>
-                    <div>+{info['xp']} XP</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
+        answer_key = f"answer_{st.session_state.encounter_id}"
+        if not st.session_state.quiz_submitted:
+            selected = st.radio(
+                "정답을 선택해 줘.",
+                question["options"],
+                index=None,
+                key=answer_key,
             )
 
-    st.caption(
-        "기본 희귀도 가중치는 일반 58, 고급 25, 희귀 12, "
-        "초희귀 4, 전설 1이야. 미발견 생물 보정과 지형별 후보군 때문에 "
-        "실제 출현 비율은 기본 가중치 비율과 달라질 수 있어."
-    )
-
-# =========================================================
-# 13. 지형별 전체 생물 도감
-# 미발견: 물음표와 숨겨진 이름
-# 발견: 사진, 이름, 설명, 분류, 희귀도, 발견 횟수
-# =========================================================
-elif st.session_state.page == "📖 생물 도감":
-    st.subheader("📖 바이오 헌터 생물 도감")
-    st.write("아직 만나지 못한 생물도 포함된 전체 도감이야.")
-
-    discovered = st.session_state.discovered
-    total_species = len(SPECIES)
-    found_species = len(discovered)
-
-    left, right = st.columns(2)
-    left.metric("📚 발견한 종", f"{found_species} / {total_species}")
-    right.metric(
-        "🌱 도감 완성도",
-        f"{found_species / total_species * 100:.1f}%"
-        if total_species else "0%",
-    )
-    st.progress(found_species / total_species if total_species else 0)
-
-    # 도감의 생물은 실제 서식지 기준으로 지형별 분류
-    terrain_tabs = st.tabs([
-        f"{TERRAINS[t]['emoji']} {t}" for t in TERRAINS
-    ])
-
-    for tab, terrain_name in zip(terrain_tabs, TERRAINS):
-        with tab:
-            candidates = get_terrain_species(terrain_name)
-
-            if not candidates:
-                st.info("이 지형에 등록된 생물이 아직 없어.")
-                continue
-
-            category_options = ["전체"] + sorted(
-                {c["category"] for c in candidates}
-            )
-            rarity_options = ["전체"] + list(RARITY_INFO.keys())
-
-            f1, f2 = st.columns(2)
-            category_filter = f1.selectbox(
-                "생물 분류",
-                category_options,
-                key=f"dex_category_{terrain_name}",
-            )
-            rarity_filter = f2.selectbox(
-                "희귀도",
-                rarity_options,
-                key=f"dex_rarity_{terrain_name}",
-            )
-
-            filtered = [
-                c for c in candidates
-                if (
-                    category_filter == "전체"
-                    or c["category"] == category_filter
-                )
-                and (
-                    rarity_filter == "전체"
-                    or c["rarity"] == rarity_filter
-                )
-            ]
-
-            found_here = sum(
-                1 for c in filtered if c["name"] in discovered
-            )
-
-            st.caption(
-                f"이 지형의 도감: {found_here}/{len(filtered)}종 발견"
-            )
-
-            for start in range(0, len(filtered), 2):
-                cols = st.columns(2)
-
-                for col, creature in zip(cols, filtered[start:start + 2]):
-                    with col:
-                        name = creature["name"]
-                        is_found = name in discovered
-                        rarity = RARITY_INFO[creature["rarity"]]
-
-                        st.markdown('<div class="creature-card">', unsafe_allow_html=True)
-
-                        if not is_found:
-                            # 미발견 생물의 이름과 사진을 공개하지 않는다.
-                            st.markdown(
-                                """
-                                <div style="text-align:center;padding:15px 0">
-                                    <div style="
-                                        margin:auto;
-                                        width:90px;
-                                        height:90px;
-                                        line-height:90px;
-                                        border-radius:50%;
-                                        background:#edf1e9;
-                                        font-size:50px;
-                                    ">❓</div>
-                                    <h3>미발견 생물</h3>
-                                    <p class="muted">정체를 알아내려면 탐험해야 해!</p>
-                                </div>
-                                """,
-                                unsafe_allow_html=True,
-                            )
-
-                            st.markdown(
-                                f"<span class='tag'>{creature['category']}</span>"
-                                f"<span class='tag' style='color:{rarity['color']}'>"
-                                f"{rarity['emoji']} {creature['rarity']}</span>",
-                                unsafe_allow_html=True,
-                            )
-
-                        else:
-                            record = discovered[name]
-
-                            st.markdown(
-                                f"""
-                                <div style="text-align:center">
-                                    <div style="color:#438052;font-weight:bold">
-                                        ✅ 도감 등록 완료
-                                    </div>
-                                    <h3>{creature['name']}</h3>
-                                    <div class="muted">{creature['english']}</div>
-                                </div>
-                                """,
-                                unsafe_allow_html=True,
-                            )
-
-                            image_url = get_wikipedia_image(creature["english"])
-                            if image_url:
-                                st.image(image_url, width=200)
-                            else:
-                                st.markdown(
-                                    "<div style='text-align:center;font-size:32px'>🌿</div>",
-                                    unsafe_allow_html=True,
-                                )
-                                st.caption("사진을 불러오지 못했어.")
-
-                            st.markdown(
-                                f"<span class='tag'>{creature['category']}</span>"
-                                f"<span class='tag' style='color:{rarity['color']}'>"
-                                f"{rarity['emoji']} {creature['rarity']}</span>",
-                                unsafe_allow_html=True,
-                            )
-                            st.write(creature["description"])
-                            st.caption(
-                                f"📍 서식지: {', '.join(creature['habitat'])}"
-                            )
-                            st.caption(f"🔎 발견 횟수: {record['count']}회")
-
-                        st.markdown("</div>", unsafe_allow_html=True)
-
-# =========================================================
-# 14. 생명과학 퀴즈
-# =========================================================
-elif st.session_state.page == "🧬 생명과학 퀴즈":
-    st.subheader("🧬 생명과학 지식 시험")
-    st.write("난이도를 선택하고 문제를 풀어 경험치를 얻어 봐!")
-
-    difficulty = st.radio(
-        "난이도",
-        ["쉬움", "보통", "어려움"],
-        horizontal=True,
-        key="quiz_difficulty",
-    )
-    st.info(f"정답 보상: +{QUIZ_REWARD[difficulty]} XP")
-
-    if (
-        st.session_state.quiz_question is None
-        or st.session_state.quiz_current_difficulty != difficulty
-    ):
-        q = random.choice(QUIZZES[difficulty])
-        st.session_state.quiz_question = q[0]
-        st.session_state.quiz_options = q[1]
-        st.session_state.quiz_answer = q[2]
-        st.session_state.quiz_explanation = q[3]
-        st.session_state.quiz_current_difficulty = difficulty
-        st.session_state.quiz_done = False
-        st.session_state.quiz_feedback = None
-        st.session_state.quiz_selected = None
-        st.session_state.quiz_id += 1
-
-    st.markdown(
-        f"""
-        <div class="creature-card">
-            <div class="muted">{difficulty} 난이도</div>
-            <h3>{st.session_state.quiz_question}</h3>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    selected = st.radio(
-        "정답을 골라 줘.",
-        st.session_state.quiz_options,
-        key=f"quiz_choice_{st.session_state.quiz_id}",
-        index=None,
-        disabled=st.session_state.quiz_done,
-    )
-
-    if not st.session_state.quiz_done:
-        if st.button("정답 확인하기", type="primary", use_container_width=True):
-            if selected is None:
-                st.warning("먼저 답을 선택해 줘!")
-            else:
-                selected_index = st.session_state.quiz_options.index(selected)
-                st.session_state.quiz_done = True
-                st.session_state.quiz_selected = selected_index
-                st.session_state.quiz_answered += 1
-
-                if selected_index == st.session_state.quiz_answer:
-                    reward = QUIZ_REWARD[difficulty]
-                    st.session_state.xp += reward
-                    st.session_state.quiz_correct += 1
-                    st.session_state.quiz_feedback = ("correct", reward)
+            if st.button("정답 제출", type="primary", use_container_width=True):
+                if selected is None:
+                    st.warning("먼저 답을 선택해 줘.")
                 else:
-                    st.session_state.quiz_feedback = ("wrong", 0)
+                    selected_index = question["options"].index(selected)
+                    resolve_answer(selected_index)
+                    st.rerun()
+        else:
+            result = st.session_state.last_result
+            selected_index = st.session_state.quiz_answer
 
+            if result in ("new", "duplicate"):
+                st.success("🎉 정답! 생물을 획득했어!")
+                if result == "new":
+                    st.balloons()
+                    st.markdown(f"## 🆕 새로운 생물: {creature['name']}")
+                else:
+                    st.markdown(f"## 🔁 {creature['name']} 중복 발견!")
+                    st.write("이미 발견한 생물이지만 경험치를 추가로 얻었어.")
+                st.write(
+                    f"**획득 경험치:** +{RARITY_INFO[creature['rarity']]['xp']}"
+                    + (" (+3 중복 보너스)" if result == "duplicate" else "")
+                )
+                st.write(f"**영어 이름:** {creature['english']}")
+                st.write(f"**특징:** {creature['description']}")
+            else:
+                st.error(f"💨 아쉽다! {creature['name']}을(를) 놓쳤어.")
+                st.write("다음 탐험에서 다시 도전해 보자!")
+
+            st.info(
+                f"정답: **{question['options'][question['answer']]}**\n\n"
+                f"{question['explanation']}"
+            )
+
+            if st.button("다음 탐험으로!", type="primary", use_container_width=True):
+                start_exploration()
                 st.rerun()
 
-    if st.session_state.quiz_done and st.session_state.quiz_feedback:
-        status, reward = st.session_state.quiz_feedback
+# =========================================================
+# 생물 도감
+# =========================================================
 
-        if status == "correct":
-            st.success(f"🎉 정답이야! +{reward} XP")
-        else:
-            correct = st.session_state.quiz_options[
-                st.session_state.quiz_answer
-            ]
-            st.error(f"아쉬워! 정답은 **{correct}** 이야.")
+elif st.session_state.page == "📖 생물 도감":
+    st.header("📖 생물 도감")
+    found_count = len(st.session_state.discovered)
+    st.progress(found_count / max(len(SPECIES), 1))
+    st.write(f"**수집 진행도: {found_count} / {len(SPECIES)}종**")
 
-        st.info(st.session_state.quiz_explanation)
+    terrain_tab_names = list(TERRAINS.keys())
+    tabs = st.tabs(terrain_tab_names)
 
-        if st.button("다음 문제 ➜", use_container_width=True):
-            q = random.choice(QUIZZES[difficulty])
-            st.session_state.quiz_question = q[0]
-            st.session_state.quiz_options = q[1]
-            st.session_state.quiz_answer = q[2]
-            st.session_state.quiz_explanation = q[3]
-            st.session_state.quiz_done = False
-            st.session_state.quiz_feedback = None
-            st.session_state.quiz_selected = None
-            st.session_state.quiz_id += 1
-            st.rerun()
+    for tab, terrain in zip(tabs, terrain_tab_names):
+        with tab:
+            terrain_species = get_terrain_species(terrain)
+            category_options = ["전체"] + sorted(
+                {c["category"] for c in terrain_species}
+            )
+            chosen_category = st.selectbox(
+                "분류 선택",
+                category_options,
+                key=f"category_{terrain}",
+            )
 
-    a, b, c = st.columns(3)
-    a.metric("📝 푼 문제", st.session_state.quiz_answered)
-    b.metric("✅ 맞힌 문제", st.session_state.quiz_correct)
+            rarity_options = ["전체"] + RARITY_ORDER
+            chosen_rarity = st.selectbox(
+                "희귀도 선택",
+                rarity_options,
+                key=f"rarity_{terrain}",
+            )
 
-    accuracy = (
-        round(st.session_state.quiz_correct / st.session_state.quiz_answered * 100)
-        if st.session_state.quiz_answered else 0
-    )
-    c.metric("🎯 정답률", f"{accuracy}%")
+            visible = []
+            for creature in terrain_species:
+                if chosen_category != "전체" and creature["category"] != chosen_category:
+                    continue
+                if chosen_rarity != "전체" and creature["rarity"] != chosen_rarity:
+                    continue
+                visible.append(creature)
+
+            st.caption(f"이 지형에서 확인할 수 있는 생물: {len(visible)}종")
+
+            if not visible:
+                st.info("선택한 조건에 해당하는 생물이 없어.")
+            else:
+                cols_per_row = 3
+                for start in range(0, len(visible), cols_per_row):
+                    cols = st.columns(cols_per_row)
+                    for col, creature in zip(
+                        cols, visible[start:start + cols_per_row]
+                    ):
+                        with col:
+                            name = creature["name"]
+                            found = name in st.session_state.discovered
+                            st.markdown('<div class="creature-box">', unsafe_allow_html=True)
+
+                            if found:
+                                show_creature_image(creature, width=180)
+                                st.markdown(f"### {creature['emoji']} {name}")
+                                st.caption(creature["english"])
+                                st.write(
+                                    f"{RARITY_INFO[creature['rarity']]['emoji']} "
+                                    f"{creature['rarity']} · {creature['category']}"
+                                )
+                                st.write(creature["description"])
+                                st.caption(
+                                    f"발견 횟수: "
+                                    f"{st.session_state.discovered[name]['count']}회"
+                                )
+                            else:
+                                st.markdown(
+                                    "<div style='font-size:70px;text-align:center;'>❓</div>",
+                                    unsafe_allow_html=True,
+                                )
+                                st.markdown("### 미발견 생물")
+                                st.write("탐험에서 퀴즈를 맞혀 발견해 보자!")
+                                st.caption(
+                                    f"{RARITY_INFO[creature['rarity']]['emoji']} "
+                                    f"{creature['rarity']} · {creature['category']}"
+                                )
+
+                            st.markdown("</div>", unsafe_allow_html=True)
 
 # =========================================================
-# 15. 업적
+# 업적
 # =========================================================
+
 elif st.session_state.page == "🏆 업적":
-    st.subheader("🏆 탐험 업적")
+    st.header("🏆 탐험 업적")
 
-    discovered_count = len(st.session_state.discovered)
-    rarity_count = {
-        rarity: sum(
-            1 for c in st.session_state.discovered.values()
-            if c["rarity"] == rarity
-        )
-        for rarity in RARITY_INFO
-    }
-
-    achievements = [
-        ("🌱 첫 발견", "생물을 1종 발견하기", discovered_count >= 1),
-        ("🍀 초보 탐험가", "생물을 5종 발견하기", discovered_count >= 5),
-        ("🌳 숲의 친구", "생물을 15종 발견하기", discovered_count >= 15),
-        ("🦉 자연 관찰가", "생물을 30종 발견하기", discovered_count >= 30),
-        ("📚 도감 수집가", "생물을 50종 발견하기", discovered_count >= 50),
-        ("🌏 생태계 전문가", "생물을 80종 발견하기", discovered_count >= 80),
-        ("👑 전설의 발견자", "전설 생물을 발견하기", rarity_count["전설"] >= 1),
-        ("💎 희귀 수집가", "희귀 생물 5종 발견하기", rarity_count["희귀"] >= 5),
-        ("🧬 생명과학 도전자", "퀴즈 5문제 풀기", st.session_state.quiz_answered >= 5),
-        ("🎓 생명과학 우등생", "퀴즈 10문제 맞히기", st.session_state.quiz_correct >= 10),
-        ("✨ 레벨 5 달성", "탐험 레벨 5에 도달하기", get_level(st.session_state.xp) >= 5),
+    found_count = len(st.session_state.discovered)
+    milestones = [
+        (1, "첫 발견", "처음으로 생물을 도감에 등록하기"),
+        (5, "자연 탐험가", "5종의 생물 발견하기"),
+        (10, "생물 수집가", "10종의 생물 발견하기"),
+        (25, "생태계 전문가", "25종의 생물 발견하기"),
+        (50, "바이오 마스터", "50종의 생물 발견하기"),
+        (100, "전설의 탐험가", "100종의 생물 발견하기"),
     ]
 
-    unlocked = sum(1 for _, _, achieved in achievements if achieved)
-    st.progress(unlocked / len(achievements))
-    st.write(f"달성한 업적: **{unlocked}/{len(achievements)}**")
+    for target, title, description in milestones:
+        if found_count >= target:
+            st.success(f"🏅 **{title}** — {description}")
+        else:
+            st.write(f"🔒 **{title}** — {description} ({found_count}/{target})")
 
-    for title, description, achieved in achievements:
-        with st.container(border=True):
-            left, right = st.columns([4, 1])
-            with left:
-                st.markdown(f"### {title if achieved else '🔒 ' + title}")
-                st.caption(description)
-            with right:
-                st.markdown("### ✅" if achieved else "🔒")
+    st.divider()
+    st.subheader("희귀 생물 업적")
 
-    st.markdown("### 희귀도별 발견 현황")
-    for rarity, count in rarity_count.items():
-        info = RARITY_INFO[rarity]
-        st.write(f"{info['emoji']} **{rarity}**: {count}종")
+    found_rarities = {
+        SPECIES_BY_NAME[name]["rarity"]
+        for name in st.session_state.discovered
+        if name in SPECIES_BY_NAME
+    }
+
+    for rarity in RARITY_ORDER:
+        if rarity in found_rarities:
+            st.success(f"{RARITY_INFO[rarity]['emoji']} {rarity} 생물 발견!")
+        else:
+            st.write(f"🔒 {RARITY_INFO[rarity]['emoji']} {rarity} 생물 발견하기")
+
+    st.divider()
+    st.subheader("탐험 기록")
+    a, b, c = st.columns(3)
+    a.metric("탐험 횟수", st.session_state.total_encounters)
+    b.metric("획득 종류", found_count)
+    c.metric("놓친 횟수", st.session_state.total_missed)
 
 # =========================================================
-# 16. 설정 및 기록 초기화
+# 설정
 # =========================================================
+
 elif st.session_state.page == "⚙️ 설정":
-    st.subheader("⚙️ 설정")
+    st.header("⚙️ 설정")
+    st.write("현재 세션의 탐험 기록을 확인하고 초기화할 수 있어.")
+    st.caption("이 앱은 수집 기록을 영구 저장하지 않아. 앱 세션이 초기화되면 기록도 사라져.")
 
-    st.markdown("""
-    <div class="creature-card">
-        <h3>🌿 바이오 헌터 안내</h3>
-        <p>지형마다 발견할 수 있는 생물이 달라.</p>
-        <p>희귀한 생물은 발견 확률이 낮지만 더 많은 경험치를 줘.</p>
-        <p>사진은 위키백과에서 가져오기 때문에 인터넷 연결이 필요해.</p>
-    </div>
-    """, unsafe_allow_html=True)
+    st.metric("총 생물 종류", len(SPECIES))
+    st.metric("발견한 종류", len(st.session_state.discovered))
+    st.metric("획득 경험치", st.session_state.xp)
+    st.metric("놓친 생물", st.session_state.total_missed)
 
-    st.markdown("### 📊 현재 플레이 현황")
-    st.write(f"- 탐험 레벨: {get_level(st.session_state.xp)}")
-    st.write(f"- 경험치: {st.session_state.xp} XP")
-    st.write(f"- 선택한 지형: {st.session_state.terrain}")
-    st.write(f"- 발견한 생물: {len(st.session_state.discovered)}종")
-    st.write(f"- 총 발견 횟수: {st.session_state.total_found}회")
-    st.write(f"- 퀴즈 정답: {st.session_state.quiz_correct}개")
+    st.divider()
+    st.subheader("기록 초기화")
 
-    st.warning(
-        "이 앱은 기록을 별도 저장소에 저장하지 않아. "
-        "세션이 종료되면 도감, 경험치, 업적 등이 초기화될 수 있어."
+    confirm_reset = st.checkbox(
+        "현재 세션의 도감과 경험치를 초기화하는 것에 동의해.",
+        key="confirm_reset",
     )
 
-    st.markdown("### 🔄 현재 기록 초기화")
-    confirm = st.checkbox("현재 기록을 초기화하겠습니다.")
+    if st.button("🗑️ 게임 기록 초기화", disabled=not confirm_reset):
+        for key in [
+            "discovered", "xp", "total_found", "total_encounters",
+            "total_missed", "current_creature", "current_question",
+            "quiz_options", "quiz_answer", "quiz_submitted",
+            "last_result", "encounter_id",
+        ]:
+            if key in st.session_state:
+                del st.session_state[key]
 
-    if st.button("처음부터 다시 시작", disabled=not confirm):
-        for key in list(st.session_state.keys()):
-            del st.session_state[key]
-        initialize_state()
+        init_state()
+        st.session_state.page = "⚙️ 설정"
+        st.success("현재 게임 기록을 초기화했어.")
         st.rerun()
 
-# =========================================================
-# 17. 하단 안내
-# =========================================================
-st.markdown("---")
+st.divider()
 st.caption(
-    "🌿 바이오 헌터 · 생물 탐험 학습 게임. "
-    "야생 생물을 관찰할 때는 서식지를 훼손하거나 동물을 만지지 말자."
+    "🌱 바이오 헌터 | 생물과 생명과학을 배우며 자연을 탐험하는 게임"
 )

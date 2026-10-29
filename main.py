@@ -39,7 +39,6 @@ RARITY_ORDER = list(RARITY_INFO)
 # =========================================================
 # 2. 생물 도감 데이터
 # 형식: 이름|분류|서식지|희귀도|설명|이모지
-# 생물 이름은 도감에서 중복되지 않도록 관리한다.
 # =========================================================
 
 RAW_SPECIES = r"""
@@ -217,6 +216,8 @@ RAW_SPECIES = r"""
 산철쭉|식물|산|일반|봄에 분홍색 계열의 꽃을 피우는 관목|🌺
 억새|식물|초원,산|일반|가을에 은빛 꽃차례가 돋보이는 풀|🌾
 갈대|식물|습지,연못|일반|물가와 습지에서 무리 지어 자라는 키 큰 풀|🌾
+"""
+
 # =========================================================
 # 3. 생물 데이터 정리 및 정보 링크
 # =========================================================
@@ -335,6 +336,7 @@ RAW_QUIZZES = r"""
 파리지옥|식물|습지|잎을 빠르게 닫아 작은 먹이를 붙잡는 식물
 """
 
+
 def parse_quizzes(raw_data):
     quizzes = []
 
@@ -380,7 +382,9 @@ def initialize_game():
 
     for key, value in defaults.items():
         if key not in st.session_state:
-            st.session_state[key] = value.copy() if isinstance(value, list) else value
+            st.session_state[key] = (
+                value.copy() if isinstance(value, list) else value
+            )
 
 
 initialize_game()
@@ -432,7 +436,10 @@ with st.sidebar:
     st.write(get_level_title(st.session_state.level))
     st.progress((st.session_state.xp % 100) / 100)
     st.caption(f"경험치: {st.session_state.xp % 100}/100")
-    st.metric("발견한 생물", f"{len(st.session_state.discovered)} / {len(SPECIES)}")
+    st.metric(
+        "발견한 생물",
+        f"{len(st.session_state.discovered)} / {len(SPECIES)}"
+    )
     st.metric("퀴즈 정답", st.session_state.quiz_correct)
 
     st.divider()
@@ -489,13 +496,20 @@ elif page == "🌎 탐험하기":
     st.subheader(f"{terrain_info['emoji']} {terrain}")
     st.write(terrain_info["description"])
 
-    if st.button("🔎 탐험 시작하기", type="primary", use_container_width=True):
+    if st.button(
+        "🔎 탐험 시작하기",
+        type="primary",
+        use_container_width=True
+    ):
         st.session_state.exploration_count += 1
         st.session_state.last_terrain = terrain
 
         possible = [
             creature for creature in SPECIES
-            if any(h in terrain_info["habitats"] for h in creature["habitats"])
+            if any(
+                h in terrain_info["habitats"]
+                for h in creature["habitats"]
+            )
         ]
 
         if not possible:
@@ -506,6 +520,7 @@ elif page == "🌎 탐험하기":
                 RARITY_INFO[creature["rarity"]]["weight"]
                 for creature in possible
             ]
+
             creature = random.choices(
                 possible,
                 weights=rarity_weights,
@@ -535,7 +550,6 @@ elif page == "🌎 탐험하기":
         st.write(f"**서식지:** {', '.join(creature['habitats'])}")
         st.write(f"**특징:** {creature['description']}")
 
-        # 새로 발견했거나 이미 발견한 생물의 정보 페이지로 이동
         st.link_button(
             f"📖 {creature['name']} 정보 알아보기",
             get_info_url(creature["name"]),
@@ -569,13 +583,22 @@ elif page == "📚 생물 도감":
 
     filtered_species = [
         creature for creature in SPECIES
-        if (selected_category == "전체" or creature["category"] == selected_category)
-        and (selected_rarity == "전체" or creature["rarity"] == selected_rarity)
+        if (
+            selected_category == "전체"
+            or creature["category"] == selected_category
+        )
+        and (
+            selected_rarity == "전체"
+            or creature["rarity"] == selected_rarity
+        )
     ]
 
     st.progress(
         len(st.session_state.discovered) / max(len(SPECIES), 1),
-        text=f"도감 완성도: {len(st.session_state.discovered)}/{len(SPECIES)}"
+        text=(
+            f"도감 완성도: {len(st.session_state.discovered)}"
+            f"/{len(SPECIES)}"
+        )
     )
 
     columns = st.columns(3)
@@ -626,7 +649,10 @@ elif page == "🧠 생물 퀴즈":
 
         if all(item["name"] != question["name"] for item in options):
             correct_creature = next(
-                (item for item in SPECIES if item["name"] == question["name"]),
+                (
+                    item for item in SPECIES
+                    if item["name"] == question["name"]
+                ),
                 None,
             )
             if correct_creature:
@@ -739,7 +765,8 @@ elif page == "🏆 업적":
     ]
 
     completed_count = sum(
-        1 for achievement in achievements if achievement["condition"]
+        1 for achievement in achievements
+        if achievement["condition"]
     )
 
     st.progress(

@@ -4,14 +4,91 @@ import requests
 import streamlit as st
 from urllib.parse import quote
 
-st.set_page_config(page_title="바이오 헌터", page_icon="🌿", layout="wide")
+st.set_page_config(page_title="생물 다양성 탐사", page_icon="🌿", layout="wide")
 
 st.markdown("""
 <style>
-.stApp {background:linear-gradient(180deg,#f2f8ec,#fffdf6);}
-h1,h2,h3 {color:#28583a;}
-div.stButton>button {border-radius:12px;min-height:42px;font-weight:600;}
-div.stButton>button[kind="primary"] {background:#39764c;border-color:#39764c;}
+/* 전체 화면: 딥그린과 아이보리를 조합한 자연 탐사 앱 테마 */
+:root {
+    --forest: #123c32;
+    --forest-light: #1d5b49;
+    --emerald: #25866b;
+    --mint: #dff3e9;
+    --gold: #d8b66a;
+    --ink: #20332d;
+    --muted: #718078;
+    --paper: #fbfaf5;
+}
+.stApp {
+    background:
+      radial-gradient(ellipse at 8% 0%, rgba(195,229,207,.58), transparent 34%),
+      radial-gradient(ellipse at 95% 12%, rgba(230,215,171,.30), transparent 28%),
+      linear-gradient(145deg, #f1f6ef 0%, #fbfaf5 48%, #eef5ef 100%);
+    color: var(--ink);
+}
+.block-container {padding-top: 2.2rem; padding-bottom: 3rem; max-width: 1400px;}
+[data-testid="stHeader"] {background: rgba(251,250,245,.72);}
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #123c32 0%, #1b5947 58%, #174638 100%);
+    border-right: 1px solid rgba(255,255,255,.12);
+}
+[data-testid="stSidebar"] * {color: #f4f7ef !important;}
+[data-testid="stSidebar"] [data-testid="stMetric"] {
+    background: rgba(255,255,255,.09);
+    border: 1px solid rgba(255,255,255,.13);
+    border-radius: 16px; padding: 12px 14px;
+}
+[data-testid="stSidebar"] [data-testid="stMetricLabel"] {opacity: .78;}
+h1, h2, h3 {color: var(--forest); letter-spacing: -.035em; font-weight: 800;}
+h1 {font-size: clamp(2rem, 4vw, 3.1rem) !important;}
+h2 {margin-top: .5rem;}
+p, label, [data-testid="stMarkdownContainer"] {line-height: 1.65;}
+[data-testid="stMetric"] {
+    background: rgba(255,255,255,.82);
+    border: 1px solid rgba(32,83,64,.10);
+    border-radius: 18px; padding: 15px 17px;
+    box-shadow: 0 7px 22px rgba(28,65,48,.055);
+}
+[data-testid="stMetricLabel"] {color: #718078; font-weight: 650;}
+[data-testid="stMetricValue"] {color: var(--forest); font-weight: 800;}
+div.stButton > button {
+    border-radius: 14px; min-height: 44px; padding: .55rem 1rem;
+    font-weight: 700; border: 1px solid rgba(30,91,70,.18);
+    background: rgba(255,255,255,.88); color: var(--forest);
+    box-shadow: 0 4px 12px rgba(26,66,49,.06);
+    transition: all .18s ease;
+}
+div.stButton > button:hover {
+    transform: translateY(-2px); border-color: var(--emerald);
+    color: var(--forest); box-shadow: 0 8px 18px rgba(26,90,65,.13);
+}
+div.stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, #1c6a53, #2b9272);
+    border: 1px solid #1c6a53; color: white;
+}
+div.stButton > button[kind="primary"]:hover {
+    background: linear-gradient(135deg, #155440, #23795e); color: white;
+}
+[data-testid="stVerticalBlockBorderWrapper"] {
+    background: rgba(255,255,255,.76);
+    border: 1px solid rgba(32,83,64,.11);
+    border-radius: 20px;
+    box-shadow: 0 8px 24px rgba(28,65,48,.055);
+}
+[data-testid="stExpander"] {
+    border: 1px solid rgba(32,83,64,.13); border-radius: 15px;
+    background: rgba(255,255,255,.66);
+}
+[data-testid="stTabs"] button {font-weight: 700;}
+[data-testid="stProgress"] > div > div {background: linear-gradient(90deg,#25866b,#d8b66a);}
+[data-testid="stAlert"] {border-radius: 15px;}
+hr {border-color: rgba(32,83,64,.13); margin: 1.5rem 0;}
+[data-testid="stImage"] img {border-radius: 16px;}
+footer {visibility: hidden;}
+@media (max-width: 700px) {
+    .block-container {padding-left: 1rem; padding-right: 1rem;}
+    h1 {font-size: 2rem !important;}
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -659,7 +736,7 @@ def resolve_answer(selected):
 # =========================================================
 
 with st.sidebar:
-    st.title("🌿 바이오 헌터")
+    st.title("🌿 생물 다양성 탐사")
     st.caption("탐험하고, 배우고, 수집하자!")
 
     st.selectbox("탐험할 지형", list(TERRAINS), key="terrain")
@@ -672,7 +749,7 @@ with st.sidebar:
     pages = ["🌲 탐험하기", "📖 생물 도감", "🏆 업적", "⚙️ 설정"]
     st.radio("메뉴", pages, key="page")
 
-st.title("🌿 바이오 헌터")
+st.title("🌿 생물 다양성 탐사")
 st.caption("생명과학 지식으로 자연 속 생물을 발견해 보세요.")
 
 # =========================================================
@@ -903,4 +980,4 @@ elif st.session_state.page == "⚙️ 설정":
         st.rerun()
 
 st.divider()
-st.caption("🌱 바이오 헌터 | 생물과 생명과학을 배우며 자연을 탐험하는 게임")
+st.caption("🌱 생물 다양성 탐사 | 생물과 생태계를 발견하고 기록하는 탐사 프로젝트")
